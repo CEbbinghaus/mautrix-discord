@@ -32,6 +32,7 @@ import (
 
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/appservice"
+	"maunium.net/go/mautrix/bridge"
 	"maunium.net/go/mautrix/bridge/bridgeconfig"
 	"maunium.net/go/mautrix/bridge/commands"
 	"maunium.net/go/mautrix/event"
@@ -324,11 +325,14 @@ func fnLink(ce *WrappedCommandEvent) {
 
 	puppet := ce.Bridge.GetPuppetByID(discordID)
 	err := puppet.SwitchCustomMXID(accessToken, mxid)
-	if err != nil {
+	if errors.Is(err, bridge.ErrNoAccessToken) {
+		ce.Reply("Linked Discord user %s to Matrix user %s, but double puppeting could not be activated: no access token or shared secret available. The link is saved and will be retried automatically.", discordID, mxid)
+	} else if err != nil {
 		ce.Reply("Failed to link Discord user %s to Matrix user %s: %v", discordID, mxid, err)
 		return
+	} else {
+		ce.Reply("Successfully linked Discord user %s to Matrix user %s", discordID, mxid)
 	}
-	ce.Reply("Successfully linked Discord user %s to Matrix user %s", discordID, mxid)
 }
 
 var cmdUnlink = &commands.FullHandler{

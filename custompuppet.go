@@ -1,6 +1,9 @@
 package main
 
 import (
+	"errors"
+
+	"maunium.net/go/mautrix/bridge"
 	"maunium.net/go/mautrix/id"
 )
 
@@ -35,7 +38,12 @@ func (puppet *Puppet) ClearCustomMXID() {
 func (puppet *Puppet) StartCustomMXID(reloginOnFail bool) error {
 	newIntent, newAccessToken, err := puppet.bridge.DoublePuppet.Setup(puppet.CustomMXID, puppet.AccessToken, reloginOnFail)
 	if err != nil {
-		puppet.ClearCustomMXID()
+		// Preserve the link in the database when there is simply no token
+		// available to activate it. The intent will be retried on next
+		// bridge start or when the user logs in.
+		if !errors.Is(err, bridge.ErrNoAccessToken) {
+			puppet.ClearCustomMXID()
+		}
 		return err
 	}
 	puppet.bridge.puppetsLock.Lock()
@@ -57,8 +65,26 @@ func (user *User) tryAutomaticDoublePuppeting() {
 	user.log.Debug().Msg("Checking if double puppeting needs to be enabled")
 	puppet := user.bridge.GetPuppetByID(user.DiscordID)
 	if len(puppet.CustomMXID) > 0 {
-		user.log.Debug().Msg("User already has double-puppeting enabled")
-		// Custom puppet already enabled
+		if puppet.customIntent == nil {
+			// CustomMXID was set (e.g. via link command) but the intent was
+			// not yet activated. Try to activate it now that a user is online.
+			user.log.Debug().Msg("CustomMXID set but intent not active, attempting to activate")
+			if err := puppet.StartCustomMXID(true); err != nil {
+				if errors.Is(err, bridge.ErrNoAccessToken) {
+					// No token or shared secret available yet; the link is
+					// preserved and will be retried on the next login.
+					user.log.Debug().Msg("Cannot activate custom puppet intent yet: no access token or shared secret available")
+				} else {
+					// Other errors (e.g. mismatching MXID, invalid token) indicate
+					// a genuinely broken link; StartCustomMXID will have cleared it.
+					user.log.Warn().Err(err).Msg("Failed to activate custom puppet intent; link cleared")
+				}
+			} else {
+				user.log.Debug().Msg("Successfully activated custom puppet intent")
+			}
+		} else {
+			user.log.Debug().Msg("User already has double-puppeting enabled")
+		}
 		return
 	}
 	puppet.CustomMXID = user.MXID
