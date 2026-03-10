@@ -38,10 +38,20 @@ func (puppet *Puppet) ClearCustomMXID() {
 func (puppet *Puppet) StartCustomMXID(reloginOnFail bool) error {
 	newIntent, newAccessToken, err := puppet.bridge.DoublePuppet.Setup(puppet.CustomMXID, puppet.AccessToken, reloginOnFail)
 	if err != nil {
-		// Preserve the link in the database when there is simply no token
-		// available to activate it. The intent will be retried on next
-		// bridge start or when the user logs in.
-		if !errors.Is(err, bridge.ErrNoAccessToken) {
+		if errors.Is(err, bridge.ErrNoAccessToken) {
+			// Preserve the link in the database — no token or shared secret
+			// available yet. The intent will be activated on the next bridge
+			// start or when the user logs in. However, clear any stale runtime
+			// state so the bridge does not keep using a previously-active
+			// (and now outdated) custom identity.
+			puppet.bridge.puppetsLock.Lock()
+			if puppet.CustomMXID != "" && puppet.bridge.puppetsByCustomMXID[puppet.CustomMXID] == puppet {
+				delete(puppet.bridge.puppetsByCustomMXID, puppet.CustomMXID)
+			}
+			puppet.bridge.puppetsLock.Unlock()
+			puppet.customIntent = nil
+			puppet.customUser = nil
+		} else {
 			puppet.ClearCustomMXID()
 		}
 		return err
