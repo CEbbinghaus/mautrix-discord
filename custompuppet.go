@@ -9,7 +9,13 @@ import (
 
 func (puppet *Puppet) SwitchCustomMXID(accessToken string, mxid id.UserID) error {
 	puppet.CustomMXID = mxid
-	puppet.AccessToken = accessToken
+	// Only overwrite the stored token when the caller actually provided one.
+	// An empty string means "no token supplied", so the existing token is
+	// preserved — this prevents an admin re-linking an MXID without a token
+	// from silently disabling an already-working double-puppet setup.
+	if accessToken != "" {
+		puppet.AccessToken = accessToken
+	}
 	puppet.Update()
 	err := puppet.StartCustomMXID(false)
 	if err != nil {
