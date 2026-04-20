@@ -312,7 +312,7 @@ func fnLink(ce *WrappedCommandEvent) {
 	}
 
 	discordID := ce.Args[0]
-	if !isNumber(discordID) || len(discordID) == 0 {
+	if !isNumber(discordID) {
 		ce.Reply("Invalid Discord user ID: must be a numeric snowflake")
 		return
 	}
