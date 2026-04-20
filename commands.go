@@ -312,6 +312,10 @@ func fnLink(ce *WrappedCommandEvent) {
 	}
 
 	discordID := ce.Args[0]
+	if !isNumber(discordID) {
+		ce.Reply("Invalid Discord user ID: must be a numeric snowflake")
+		return
+	}
 	mxid := id.UserID(ce.Args[1])
 	var accessToken string
 	if len(ce.Args) >= 3 {
@@ -327,6 +331,7 @@ func fnLink(ce *WrappedCommandEvent) {
 	err := puppet.SwitchCustomMXID(accessToken, mxid)
 	if errors.Is(err, bridge.ErrNoAccessToken) {
 		ce.Reply("Linked Discord user %s to Matrix user %s, but double puppeting could not be activated: no access token or shared secret available. The link is saved and will be retried automatically.", discordID, mxid)
+		return
 	} else if err != nil {
 		ce.Reply("Failed to link Discord user %s to Matrix user %s: %v", discordID, mxid, err)
 		return

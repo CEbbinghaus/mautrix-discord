@@ -18,11 +18,15 @@ func (puppet *Puppet) SwitchCustomMXID(accessToken string, mxid id.UserID) error
 		puppet.AccessToken = ""
 	}
 	puppet.CustomMXID = mxid
-	puppet.Update()
 	err := puppet.StartCustomMXID(false)
 	if err != nil {
+		if errors.Is(err, bridge.ErrNoAccessToken) {
+			// Persist the link even though activation failed.
+			puppet.Update()
+		}
 		return err
 	}
+	puppet.Update()
 	// TODO leave rooms with default puppet
 	return nil
 }
@@ -83,25 +87,21 @@ func (user *User) tryAutomaticDoublePuppeting() {
 	user.log.Debug().Msg("Checking if double puppeting needs to be enabled")
 	puppet := user.bridge.GetPuppetByID(user.DiscordID)
 	if len(puppet.CustomMXID) > 0 {
-		if puppet.customIntent == nil {
-			// CustomMXID was set (e.g. via link command) but the intent was
-			// not yet activated. Try to activate it now that a user is online.
-			user.log.Debug().Msg("CustomMXID set but intent not active, attempting to activate")
-			if err := puppet.StartCustomMXID(true); err != nil {
-				if errors.Is(err, bridge.ErrNoAccessToken) {
-					// No token or shared secret available yet; the link is
-					// preserved and will be retried on the next login.
-					user.log.Debug().Msg("Cannot activate custom puppet intent yet: no access token or shared secret available")
-				} else {
-					// Other errors (e.g. mismatching MXID, invalid token) indicate
-					// a genuinely broken link; StartCustomMXID will have cleared it.
-					user.log.Warn().Err(err).Msg("Failed to activate custom puppet intent; link cleared")
-				}
-			} else {
-				user.log.Debug().Msg("Successfully activated custom puppet intent")
-			}
-		} else {
+		if puppet.CustomMXID != user.MXID {
+			user.log.Debug().
+				Str("existing_custom_mxid", puppet.CustomMXID.String()).
+				Msg("Puppet already linked to a different Matrix user, not overriding")
+			return
+		}
+		if puppet.customIntent != nil {
 			user.log.Debug().Msg("User already has double-puppeting enabled")
+			return
+		}
+		user.log.Debug().Msg("Custom MXID matches but intent is nil, trying to activate")
+		if err := puppet.StartCustomMXID(true); err != nil {
+			user.log.Warn().Err(err).Msg("Failed to re-activate double puppeting")
+		} else {
+			user.log.Debug().Msg("Successfully re-activated custom puppet")
 		}
 		return
 	}
