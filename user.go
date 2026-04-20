@@ -480,6 +480,16 @@ func (user *User) Logout(isOverwriting bool) {
 	user.Lock()
 	defer user.Unlock()
 
+	if user.DiscordID != "" {
+		puppet := user.bridge.GetPuppetByID(user.DiscordID)
+		if puppet.CustomMXID == user.MXID {
+			err := puppet.SwitchCustomMXID("", "")
+			if err != nil {
+				user.log.Warn().Err(err).Msg("Failed to disable custom puppet while logging out of Discord")
+			}
+		}
+	}
+
 	if user.Session != nil {
 		if err := user.Session.Close(); err != nil {
 			user.log.Warn().Err(err).Msg("Error closing session")
